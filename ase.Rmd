@@ -1,0 +1,91 @@
+---
+title: "Adjacency Spectral Embedding (ASE)"
+author: "Coleman Zhang"
+date: "November 26, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Algorithms Basics
+
+The algorithm used here is described in "A consistent adjacency spectral embedding for stochastic blockmodel graphs" by Sussman et al [1].
+
+$\mathbf{Input}$ an adjacency matrix $\mathbf{A}\in\left\{0,1\right\}^{n\times{n}}$,
+
+1. Compute the singular value decomposition:
+$\mathbf{A} = \widetilde{\mathbf{U}}'\widetilde{\mathbf{\Sigma}}'\widetilde{\mathbf{V}}'^\intercal$, where $\widetilde{\mathbf{\Sigma}}'$ is a diagonal matrix with decreasing singular values;
+2. Let $\widetilde{\mathbf{U}}$ and $\widetilde{\mathbf{V}}$ be the first d columns of $\widetilde{\mathbf{U}}'$ and $\widetilde{\mathbf{V}}'$, respectively, and let $\widetilde{\mathbf{\Sigma}}$ be the sub-matrix $\widetilde{\mathbf{\Sigma}}'$ given by the first $d$ rows and columns ($d\in\left\{1,2,...,n\right\}$);
+3.  Define $\widetilde{\mathbf{Z}}$=$[\widetilde{\mathbf{U}}\widetilde{\mathbf{\Sigma}}^{1/2}|\widetilde{\mathbf{V}}\widetilde{\mathbf{\Sigma}}^{1/2}]\in\mathbb{R}^{n\times2d}$ to be the concatenation of the coordinate-scaled singular vector matrices;
+4. Let $$(\hat{\mathbf{\psi}},\hat{\tau})=\underset{\mathbf{\psi},\tau}{\operatorname{argmin}}\sum_{i=1}^{n}||\widetilde{Z}_i-\psi_{\tau(i)}||_2^2$$
+give the centroids and block assignments, where $\widetilde{Z}_i$ is the $i^{th}$ row of $\mathbf{\widetilde{Z}}$, $\hat{\mathbf{\psi}}\in\mathbb{R}^{K\times{2d}}$ are the centroids and $\hat{\tau}$ is a block assignment function from $[n]$ to $[K]$ ($K\in\left\{2,3,...,n\right\}$).
+
+$\mathbf{Return}$ $\hat{\tau}$, a block assignment function
+
+## Background
+### Motivation
+Given a graph, our primary goal is to accurately assign all of the nodes to their correct blocks. The realized partition of the vertices is not observed. However, the realized vertex adjacencies (edges) are observed, and the main inferential task is to estimate the partition of the vertices, using the realized adjacencies as a guide.
+
+### Mechanism
+Sussman et al. [1] proved the consistency of a block estimator that is based on spectral partitioning applied to the adjacency matrix. Fishkind et al. [2] proved that the adjacency-spectral partitioning procedure, without knowing the number of blocks in our graph, gives consistent block estimation. 
+
+Performing SVD on adjacency matrix embeds data from $\mathbb{R}^n$ to a lower dimension $\mathbb{R}^d$. ${\widetilde{\mathbf{\Sigma}}}\in\mathbb{R}^{d\times{d}}$ is a diagonal matrix with its diagonals non-increasingly ordered $\sigma_1\geq\sigma_2\geq...\geq\sigma_d$. Scale each of the first $d$ singluar vectors by its importance, $\sqrt\sigma_i$: $\mathbf{X}:=\widetilde{\mathbf{U}}\sqrt{\widetilde{\mathbf{\Sigma}}}$ and $\mathbf{Y}:=\widetilde{\mathbf{V}}\sqrt{\widetilde{\mathbf{\Sigma}}}$. Then, cluster the rows of $[X|Y]$ into at most K clusters using the minimum
+least squares criterion.
+
+The eigenvalues of $\mathbf{A}$ are "close" to those of $\mathbf{P}$, the edge probability matrix, and therefore the subspace spanned by the top $d$ eigenvectors of $\mathbf{P}$ is well-approximated by the subspace spanned by the top $d$ eigenvectors of $\mathbf{A}$.
+
+##Model and Simulation
+
+###Stochastic Blockmodel
+The random graph setting in which we work is the stochastic blockmodel, which has parameters $K$, $\rho$, and $M$. 
+
+####Parameters
+Here, $K$ is the number of blocks. $\rho\in(0,1]^K$, the $block$ ${probability}$ ${vector}$ satisfies $\sum_{i=1}^{K}\rho_i=1$. $M\in[0,1]^{K\times{K}}$, the $communication$ ${probability}$ ${matrix}$ satisfies the model identifiability requirement that, for all $p$,$q\in\left\{1,2,...,K\right\}$ distinct, either the $p$th and $q$th rows or columns of M are not equal.
+
+####Definition
+There are $n$ vertices, labeled $1,2,..., n$, and they are each randomly assigned to blocks labeled $1,2,...,K$ by a random $block$ $membership$ $function$: $\tau:\left\{1,2,...,n\right\}\rightarrow\left\{1,2,...,K\right\}$ such that for each vertex $i$ and block $k$, independently of the other vertices, the probability
+that $\tau(i) = k$ is $\rho_k$
+
+Then there is a random adjacency matrix $\mathbf{A}\in\left\{0,1\right\}^{n\times{n}}$ where, for all pairs of vertices $i, j$ that are distinct, $A_{i,j}$ is 1 or 0 according as there is an $i, j$ edge or not. Conditioned on $\tau$, the probability of there being an $i, j$ edge is $\mathbf{P}_{ij}=M_{\tau_{(i)},\tau_{(j)}}$, independently of the other pairs of vertices.
+
+###Simulation
+To illustrate the effectiveness of the adjacency spectral embedding, we simulate
+random undirected graphs generated from the following stochastic blockmodel:
+$$K = 2, \rho = (.6,.4)^T, M =
+\begin{pmatrix} 
+0.42 & 0.42 \\
+0.42 & 0.5 
+\end{pmatrix}$$
+```{r pressure, echo=FALSE,include=FALSE}
+if(!require(igraph)){
+    install.packages("igraph")
+    suppressMessages(require(igraph))
+}
+
+ase.interface <- function(g, dim)
+{
+
+    ## embedding into "dim"
+    X <- embed_adjacency_matrix(g, dim)$X
+
+    return(X)
+}
+```
+
+```{r}
+pm <- cbind(c(.42, .42), c(.42, .5))
+g <- sample_sbm(1000, pref.matrix=pm, block.sizes=c(600,400))
+A = as_adjacency_matrix(g)
+embed <- embed_adjacency_matrix(g, 2)
+```
+
+
+
+
+
+
+
+
+
